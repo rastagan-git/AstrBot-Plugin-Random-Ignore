@@ -1,0 +1,6 @@
+name: astrbot_plugin_random_ignore
+desc: 按设定概率随机忽略私聊和被@/回复的消息
+help: 见 README.md
+version: 1.0.0
+author: rastagan-git
+repo: https://github.com/rastagan-git/AstrBot-Plugin-Random-Ignore
