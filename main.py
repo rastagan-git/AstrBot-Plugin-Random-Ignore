@@ -1,48 +1,41 @@
 import random
-import logging
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star
+from astrbot.api import logger
 
-logger = logging.getLogger("astrbot")
-
-@register("random_ignore", "YourName", "按设定概率忽略私聊和被@/回复的消息", "1.0.0")
+# 注意：移除了 @register，由外部的 metadata.yaml 接管元数据
 class RandomIgnorePlugin(Star):
-    def __init__(self, context: Context, config: dict):
+    def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
-        self.config = config
+        # 兼容处理 config 注入
+        self.config = config or {}
 
+    # 使用消息前置装饰器进行拦截
     @filter.on_decorating_message()
     async def intercept_message(self, event: AstrMessageEvent):
-        # 实时从配置读取最新的概率设置，默认值为 0.3
         ignore_prob = self.config.get("ignore_probability", 0.3)
 
-        # 1. 判断是否为私聊消息
-        # 在大多数平台，如果获取不到 group_id 则为私聊
         is_private_chat = not bool(event.get_group_id())
         
-        # 2. 判断是否在群聊中被 @ 或被回复
-        # 依赖 AstrBot message_obj 提供的原生判断方法
         is_at_bot = False
         is_reply_bot = False
         
         if hasattr(event.message_obj, 'is_at_me'):
             is_at_bot = event.message_obj.is_at_me()
             
-        # 根据不同协议适配器，被回复有时被统一算作 at_me，此处预留独立判断的兼容逻辑
         if hasattr(event.message_obj, 'is_reply_me'):
             is_reply_bot = event.message_obj.is_reply_me()
 
-        # 3. 只有当满足“私聊”或“被@”或“被回复”时，才进行概率投掷
         if is_private_chat or is_at_bot or is_reply_bot:
-            # 随机生成一个 0.0 到 1.0 的浮点数
             rand_val = random.random()
             
-            # 如果生成的随机数小于设定的概率阈值，则执行拦截
             if rand_val < ignore_prob:
-                logger.info(f"[RandomIgnore] 触发随机忽略机制 (设定概率: {ignore_prob}, 本次随机数: {rand_val:.2f})")
+                logger.info(f"[RandomIgnore] 触发拦截机制 (概率: {ignore_prob}, 随机数: {rand_val:.2f})")
                 
-                # 中断事件传播，底层框架将不再把这条消息交给大模型或后续插件处理
+                # 尝试中断事件传播。如果 V4 更改了底层的拦截 API，请观察终端此处的 Warning 日志
                 if hasattr(event, 'stop_event'):
                     event.stop_event()
                 else:
-                    logger.warning("[RandomIgnore] 未能在 event 中找到 stop_event() 方法，可能版本不兼容，拦截失败。")
+                    # 备用拦截方案：直接将当前消息的文本清空或置位，阻断大模型的后续处理
+                    event.message_str = ""
+                    logger.warning("[RandomIgnore] 当前 V4 核心未暴露 stop_event，已尝试通过清空 message_str 拦截。")
